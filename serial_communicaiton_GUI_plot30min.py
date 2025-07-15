@@ -2,14 +2,17 @@ import serial
 import threading
 import time
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
+from collections import deque
+from datetime import timedelta
 
+# --- Serial ports ---
 PORTS = {
     "CO2_inlet_ppm":  "COM3",
     "CO2_outlet_ppm": "COM4",
@@ -17,7 +20,10 @@ PORTS = {
 BAUDRATE = 19200
 TIMEOUT = 1
 
+# --- Data buffering for plotting ---
 MAX_MINUTES = 30
+MAX_POINTS = MAX_MINUTES * 60  # 1 per second
+
 
 class DualCO2Logger:
     def __init__(self, ports, baudrate=BAUDRATE, timeout=TIMEOUT):
@@ -29,7 +35,7 @@ class DualCO2Logger:
         self.data = {name: None for name in ports}
         self.serials = {}
         self.threads = []
-        self.row_callback = None
+        self.row_callback = None  # GUI callback: (timestamp, inlet, outlet)
 
     def _activate_sensor(self, ser):
         for _ in range(30):
@@ -92,8 +98,8 @@ class DualCO2Logger:
 class CO2App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Dual CO₂ Logger with Live & Full Plot")
-        self.geometry("900x750")
+        self.title("Dual CO₂ Logger with Live Plot")
+        self.geometry("800x600")
         self.resizable(False, False)
 
         self.logger = DualCO2Logger(PORTS)
@@ -102,40 +108,29 @@ class CO2App(tk.Tk):
 
         # UI Controls
         ttk.Label(self, text="Log file:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-        self.fname_var = tk.StringVar(value="dual_co2_log.csv")
-        self.entry = ttk.Entry(self, textvariable=self.fname_var, width=50)
+        self.fname_var = tk.StringVar(value="dual_co2_log.csv") # 
+        self.entry = ttk.Entry(self, textvariable=self.fname_var, width=40)
         self.entry.grid(row=0, column=1, padx=5, pady=10, sticky="w")
         self.button = ttk.Button(self, text="Start", width=15, command=self._toggle)
         self.button.grid(row=0, column=2, padx=10, pady=10)
 
-        # Matplotlib: two subplots
-        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
-        self.fig.subplots_adjust(hspace=0.4)
-        self.ax1.set_title("Live CO₂ (last 30 min)")
-        self.ax2.set_title("Full CO₂ Measurement")
-        for ax in (self.ax1, self.ax2):
-            ax.set_ylabel("CO₂ [ppm]")
-            ax.grid(True)
-
-        self.ax2.set_xlabel("Time")
-        self.ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        # --- Matplotlib Figure Setup ---
+        self.fig, self.ax = plt.subplots(figsize=(8, 4))
+        self.ax.set_title("Live CO₂ Concentration")
+        self.ax.set_xlabel("Time")
+        self.ax.set_ylabel("CO₂ [ppm]")
+        self.ax.grid(True)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().grid(row=1, column=0, columnspan=3, padx=10, pady=10)
 
-        # Data containers
-        self.all_times = []
-        self.all_inlet = []
-        self.all_outlet = []
+        self.times = deque(maxlen=MAX_POINTS)
+        self.inlet_vals = deque(maxlen=MAX_POINTS)
+        self.outlet_vals = deque(maxlen=MAX_POINTS)
 
-        # Plot line handles
-        self.live_inlet,  = self.ax1.plot([], [], label="CO2_inlet_ppm", color='orange')
-        self.live_outlet, = self.ax1.plot([], [], label="CO2_outlet_ppm", color='blue')
-        self.full_inlet,  = self.ax2.plot([], [], label="CO2_inlet_ppm", color='orange')
-        self.full_outlet, = self.ax2.plot([], [], label="CO2_outlet_ppm", color='blue')
-
-        self.ax1.legend()
-        self.ax2.legend()
+        self.inlet_line, = self.ax.plot([], [], label="CO2_inlet_ppm", color='orange')
+        self.outlet_line, = self.ax.plot([], [], label="CO2_outlet_ppm", color='blue')
+        self.ax.legend()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -148,9 +143,6 @@ class CO2App(tk.Tk):
             self.entry.configure(state="disabled")
             self.button.configure(text="Stop")
             self.running = True
-            self.all_times.clear()
-            self.all_inlet.clear()
-            self.all_outlet.clear()
             threading.Thread(target=self.logger.start, args=(fname,), daemon=True).start()
         else:
             self.logger.stop()
@@ -159,39 +151,32 @@ class CO2App(tk.Tk):
             self.running = False
 
     def update_plot(self, t: datetime, inlet: float, outlet: float):
-        self.all_times.append(t)
-        self.all_inlet.append(inlet)
-        self.all_outlet.append(outlet)
+        self.times.append(t)
+        self.inlet_vals.append(inlet)
+        self.outlet_vals.append(outlet)
 
-        # --- Top plot: last 30 minutes ---
-        window = timedelta(minutes=MAX_MINUTES)
-        t_now = self.all_times[-1]
-        t_min = t_now - window
+        # Update data
+        self.inlet_line.set_data(self.times, self.inlet_vals)
+        self.outlet_line.set_data(self.times, self.outlet_vals)
 
-        # Filter last 30 min for live plot
-        live_indices = [i for i, ti in enumerate(self.all_times) if ti >= t_min]
-        live_times = [self.all_times[i] for i in live_indices]
-        live_inlet = [self.all_inlet[i] for i in live_indices]
-        live_outlet = [self.all_outlet[i] for i in live_indices]
+        # Update x-axis
+        if len(self.times) > 1:
+            t0 = self.times[0]
+            t1 = self.times[-1]
+            window = timedelta(minutes=MAX_MINUTES)
+            if (t1 - t0) < window:
+                self.ax.set_xlim(t0, t0 + window)
+            else:
+                self.ax.set_xlim(t1 - window, t1)
 
-        self.live_inlet.set_data(live_times, live_inlet)
-        self.live_outlet.set_data(live_times, live_outlet)
+            self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
 
-        if live_times:
-            self.ax1.set_xlim(live_times[0], live_times[-1])
-            min_y = min(live_inlet + live_outlet)
-            max_y = max(live_inlet + live_outlet)
-            self.ax1.set_ylim(min_y - 20, max_y + 20)
-
-        # --- Bottom plot: full history ---
-        self.full_inlet.set_data(self.all_times, self.all_inlet)
-        self.full_outlet.set_data(self.all_times, self.all_outlet)
-
-        if self.all_times:
-            self.ax2.set_xlim(self.all_times[0], self.all_times[-1])
-            min_y = min(self.all_inlet + self.all_outlet)
-            max_y = max(self.all_inlet + self.all_outlet)
-            self.ax2.set_ylim(min_y - 20, max_y + 20)
+        # Update y-axis
+        all_vals = self.inlet_vals + self.outlet_vals
+        if all_vals:
+            min_y = min(all_vals)
+            max_y = max(all_vals)
+            self.ax.set_ylim(min_y - 20, max_y + 20)
 
         self.canvas.draw_idle()
 
