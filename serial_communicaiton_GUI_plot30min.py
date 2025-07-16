@@ -54,6 +54,9 @@ class DualCO2Logger:
         self._activate_sensor(ser)
         time.sleep(1)
         ser.write(b"r\r\n")
+        
+        time.sleep(1)
+        ser.write(b"r\r\n")
 
         while not self.stop_event.is_set():
             line = ser.readline().decode("utf-8", errors="ignore").strip()
@@ -108,7 +111,7 @@ class CO2App(tk.Tk):
 
         # UI Controls
         ttk.Label(self, text="Log file:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-        self.fname_var = tk.StringVar(value="dual_co2_log.csv") # 
+        self.fname_var = tk.StringVar(value= "CO2_log_" + datetime.now().strftime("%Y-%m-%d_%H-%M") + "_")#"dual_co2_log.csv") # 
         self.entry = ttk.Entry(self, textvariable=self.fname_var, width=40)
         self.entry.grid(row=0, column=1, padx=5, pady=10, sticky="w")
         self.button = ttk.Button(self, text="Start", width=15, command=self._toggle)

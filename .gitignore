@@ -1,0 +1,2 @@
+# Ignore log_files directory and all its contents
+log_files/

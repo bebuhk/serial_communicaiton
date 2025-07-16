@@ -11,7 +11,7 @@ import csv
 from datetime import datetime
 
 # --- Serial Configuration ---
-PORT = "COM4"
+PORT = "COM3"
 BAUDRATE = 19200
 TIMEOUT = 1  # seconds
 

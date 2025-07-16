@@ -5,7 +5,6 @@ import csv
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk, messagebox
-import os
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -93,8 +92,8 @@ class DualCO2Logger:
 class CO2App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Dual CO₂ Logger with Live Data & Full Plot")
-        self.geometry("1000x750")
+        self.title("Dual CO₂ Logger with Live & Full Plot")
+        self.geometry("900x750")
         self.resizable(False, False)
 
         self.logger = DualCO2Logger(PORTS)
@@ -103,8 +102,7 @@ class CO2App(tk.Tk):
 
         # UI Controls
         ttk.Label(self, text="Log file:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-        self.fname_var = tk.StringVar(value= "CO2_log_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_")#"dual_co2_log.csv") # 
-        #self.fname_var = tk.StringVar(value="dual_co2_log.csv")
+        self.fname_var = tk.StringVar(value="dual_co2_log.csv")
         self.entry = ttk.Entry(self, textvariable=self.fname_var, width=50)
         self.entry.grid(row=0, column=1, padx=5, pady=10, sticky="w")
         self.button = ttk.Button(self, text="Start", width=15, command=self._toggle)
@@ -147,14 +145,6 @@ class CO2App(tk.Tk):
             if not fname:
                 messagebox.showerror("Filename missing", "Please enter a filename before starting.")
                 return
-            if not fname.endswith(".csv"):
-                fname += ".csv"
-            fname = "log_files/" + fname  # Ensure log_files directory exists
-            os.makedirs(os.path.dirname(fname), exist_ok=True)  # Create directory if it doesn't
-            # check if file already exists
-            if os.path.exists(fname):
-                if not messagebox.askyesno("File exists", f"{fname} already exists. Overwrite?"):
-                    return
             self.entry.configure(state="disabled")
             self.button.configure(text="Stop")
             self.running = True
@@ -167,9 +157,6 @@ class CO2App(tk.Tk):
             self.entry.configure(state="normal")
             self.button.configure(text="Start")
             self.running = False
-            self.fname_var = tk.StringVar(value= "CO2_log_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_")#"dual_co2_log.csv") # 
-            self.entry = ttk.Entry(self, textvariable=self.fname_var, width=50)
-            self.entry.grid(row=0, column=1, padx=5, pady=10, sticky="w")
 
     def update_plot(self, t: datetime, inlet: float, outlet: float):
         self.all_times.append(t)
@@ -213,12 +200,6 @@ class CO2App(tk.Tk):
             if messagebox.askyesno("Quit", "Measurement still running — stop and quit?"):
                 self._toggle()
         self.destroy()
-        # end script
-        self.logger.stop()
-        print("Application closed. All threads stopped.")
-
-        # end mainloop
-        self.quit()
 
 
 if __name__ == "__main__":
