@@ -9,8 +9,8 @@ import time
 import threading
 
 # Serial port configuration
-PORT = "COM3" # Inlet
-PORT = "COM4" # Outlet
+PORT = "COM5" # Inlet
+PORT = "COM6" # Outlet
 BAUDRATE = 19200
 TIMEOUT = 1  # seconds
 
